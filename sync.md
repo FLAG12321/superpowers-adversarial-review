@@ -1,64 +1,105 @@
 ---
 name: adversarial-gates-sync
 description: >
-  首次安装后运行一次，或 superpowers 升级后运行。
-  向 superpowers skill 文件注入显式触发行，使 adversarial-review-gates 被可靠调用。
+  Run once after first install, or after superpowers upgrades.
+  Injects hard-constraint trigger lines into superpowers skill files so adversarial-review-gates is reliably invoked.
 ---
 
 # Adversarial Gates Sync
 
-向 superpowers 的 6 个 skill 文件注入显式触发行，让 superpowers 工作流在关键节点自动调用 `adversarial-review-gates`。
+Inject hard-constraint trigger lines into 7 superpowers skill files, ensuring superpowers workflows **MUST** invoke `adversarial-review-gates` at critical checkpoints.
 
-**设计原则：**
-- 注入内容用 HTML 注释标记包裹，支持检测/更新/清理
-- 路径通过 Glob 动态发现，兼容 superpowers 版本升级
-- 每次注入仅添加触发行，不改动 superpowers 的其他内容
+**Design principles:**
+- All injected content is wrapped in `<EXTREMELY-IMPORTANT>` blocks, matching superpowers' native highest-priority semantic tag
+- Injected content is wrapped in HTML comment markers for detection/update/cleanup
+- Paths are discovered dynamically via Glob, compatible with superpowers version upgrades
+- Each injection only adds trigger lines — no other superpowers content is modified
 
-## 执行步骤
+## Execution Steps
 
-### 步骤 1：发现 superpowers 缓存路径
+### Step 1: Discover superpowers cache path
 
-使用 Glob 工具搜索：
+Use Glob to search:
 ```
 ~/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/brainstorming/SKILL.md
 ```
 
-从结果中提取基路径。例如结果为 `~/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/SKILL.md`，则基路径为 `~/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/`。
+Extract the base path from the result. For example, if the result is `~/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/brainstorming/SKILL.md`, the base path is `~/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/`.
 
-如果存在多个版本目录，取版本号最大的那个。
+If multiple version directories exist, use the one with the highest version number.
 
-如果未找到任何结果 → 报告"未找到 superpowers 插件缓存"，终止。
+If no results found → report "superpowers plugin cache not found" and stop.
 
-### 步骤 2：逐文件检查与注入
+### Step 2: Check and inject each file
 
-对以下 6 个注入目标，依次执行：
+For each of the 7 injection targets below:
 
-1. Grep 搜索 `adversarial-review-gates:gate-N` 标记
-2. 已存在 → 标记 OK，跳过
-3. 不存在 → 读取文件，定位锚点，使用 Edit 工具注入
+1. Grep for the `adversarial-review-gates:gate-N` marker
+2. If marker exists → **check if it is the old format** (does not contain `EXTREMELY-IMPORTANT`)
+   - Old format → delete the old marker interval (from `<!-- adversarial-review-gates:gate-N:start -->` to `<!-- adversarial-review-gates:gate-N:end -->` inclusive), then inject the new version
+   - New format → mark as OK, skip
+3. If marker does not exist → read the file, locate the anchor, inject using the Edit tool
 
-如果锚点文本在文件中不存在（superpowers 重构了该段落）：
-- 读取文件全文，理解新的段落结构
-- 找语义等价的位置（自审完成 → 用户审查之间、验证完成 → 下一步之前等）
-- 在新位置注入
-- 如果找不到语义等价位置 → 标记 MANUAL，记录到报告
+**Old format detection:** If the marker interval does **not** contain the string `EXTREMELY-IMPORTANT`, it is old format.
+
+If the anchor text does not exist in the file (superpowers restructured that section):
+- Read the full file, understand the new paragraph structure
+- Find a semantically equivalent position (after self-review completes → before user review, after verification → before next step, etc.)
+- Inject at the new position
+- If no semantically equivalent position can be found → mark as MANUAL, record in report
 
 ---
 
-## 注入清单
+## Injection Manifest
+
+### Gate 0: using-superpowers/SKILL.md (global fallback)
+
+**File:** `{base_path}/using-superpowers/SKILL.md`
+
+**Anchor:** Before the `## Skill Priority` line (note: insert BEFORE the anchor, not after)
+
+**Injection content:**
+```markdown
+<!-- adversarial-review-gates:gate-0:start -->
+<EXTREMELY-IMPORTANT>
+## Adversarial Review Gates — Mandatory Global Rule
+
+After the following superpowers skills produce their key artifacts, you **MUST** invoke the `adversarial-review-gates` skill for independent adversarial review. This is NOT optional — skipping it means skipping a quality gate.
+
+| Completed Skill | Artifact | Required Gate |
+|----------------|----------|---------------|
+| brainstorming | spec written + self-review passed | Gate 1: Spec Verification |
+| writing-plans | plan written + self-review passed | Gate 2: Adversarial Plan Review |
+| subagent-driven-development | single task implementation done | Gate 3: Task Review |
+| executing-plans | single task verification passed | Gate 3: Task Review |
+| requesting-code-review | skill invoked | Gate 4: Final Code Review |
+| systematic-debugging | Phase 4 fix passes tests | Gate 5: Bug Fix Review |
+
+**If you do not see an explicit instruction to call adversarial-review-gates within any of the above skills' flows, it may have been omitted — but this global rule still applies. You MUST proactively invoke it.**
+</EXTREMELY-IMPORTANT>
+
+<!-- adversarial-review-gates:gate-0:end -->
+
+```
+
+---
 
 ### Gate 1: brainstorming/SKILL.md
 
-**文件：** `{基路径}/brainstorming/SKILL.md`
+**File:** `{base_path}/brainstorming/SKILL.md`
 
-**锚点：** 在包含 `Fix any issues inline. No need to re-review` 的行之后
+**Anchor:** After the line containing `Fix any issues inline. No need to re-review`
 
-**注入内容：**
+**Injection content:**
 ```markdown
 
 <!-- adversarial-review-gates:gate-1:start -->
-**Adversarial Spec Review:**
-After self-review passes, invoke `adversarial-review-gates` skill (Gate 1: Spec 验证) for independent requirement verification before proceeding to User Review Gate.
+<EXTREMELY-IMPORTANT>
+**Adversarial Spec Review — MANDATORY:**
+After self-review passes, you **MUST** invoke the `adversarial-review-gates` skill (Gate 1: Spec Verification) for independent requirement verification **BEFORE** proceeding to the User Review Gate.
+
+Skipping this step is a workflow violation — even if the spec looks perfect, independent review can still uncover blind spots. If you find yourself wanting to skip this, that is exactly the rationalization behavior described in the Red Flags table.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-1:end -->
 ```
 
@@ -66,16 +107,20 @@ After self-review passes, invoke `adversarial-review-gates` skill (Gate 1: Spec 
 
 ### Gate 2: writing-plans/SKILL.md
 
-**文件：** `{基路径}/writing-plans/SKILL.md`
+**File:** `{base_path}/writing-plans/SKILL.md`
 
-**锚点：** 在包含 `If you find a spec requirement with no task, add the task.` 的行之后
+**Anchor:** After the line containing `If you find a spec requirement with no task, add the task.`
 
-**注入内容：**
+**Injection content:**
 ```markdown
 
 <!-- adversarial-review-gates:gate-2:start -->
-**Adversarial Plan Review:**
-After self-review passes, invoke `adversarial-review-gates` skill (Gate 2: Plan 对抗审查) for independent plan verification before proceeding to Execution Handoff.
+<EXTREMELY-IMPORTANT>
+**Adversarial Plan Review — MANDATORY:**
+After plan self-review passes, you **MUST** invoke the `adversarial-review-gates` skill (Gate 2: Adversarial Plan Review) for independent plan verification **BEFORE** proceeding to the Execution Handoff.
+
+Skipping this step is a workflow violation — architectural flaws in the plan are extremely costly to fix after implementation. If you find yourself wanting to skip this, that is exactly the rationalization behavior described in the Red Flags table.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-2:end -->
 ```
 
@@ -83,16 +128,20 @@ After self-review passes, invoke `adversarial-review-gates` skill (Gate 2: Plan 
 
 ### Gate 3a: subagent-driven-development/SKILL.md
 
-**文件：** `{基路径}/subagent-driven-development/SKILL.md`
+**File:** `{base_path}/subagent-driven-development/SKILL.md`
 
-**锚点：** 在 `## Red Flags` 行之前（注意：这里是插入在锚点之前，不是之后）
+**Anchor:** Before the `## Red Flags` line (note: insert BEFORE the anchor, not after)
 
-**注入内容：**
+**Injection content:**
 ```markdown
 <!-- adversarial-review-gates:gate-3:start -->
-## Adversarial Review Gate
+<EXTREMELY-IMPORTANT>
+## Adversarial Review Gate — MANDATORY
 
-After each task's code quality review passes and the task is marked complete, invoke `adversarial-review-gates` skill (Gate 3: Task 审查) for independent adversarial review. The skill uses opus-powered `code-reviewer` in isolated context, adding a third review stage beyond spec compliance and code quality.
+After each task's code quality review passes and the task is marked complete, you **MUST** invoke the `adversarial-review-gates` skill (Gate 3: Task Review) for independent adversarial review. The skill uses an opus-powered `code-reviewer` in isolated context, providing a third review layer beyond spec compliance and code quality.
+
+Skipping this step is a workflow violation.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-3:end -->
 
 ```
@@ -101,14 +150,16 @@ After each task's code quality review passes and the task is marked complete, in
 
 ### Gate 3b: executing-plans/SKILL.md
 
-**文件：** `{基路径}/executing-plans/SKILL.md`
+**File:** `{base_path}/executing-plans/SKILL.md`
 
-**锚点：** 在包含 `3. Run verifications as specified` 的行之后
+**Anchor:** After the line containing `3. Run verifications as specified`
 
-**注入内容：**
+**Injection content:**
 ```markdown
 <!-- adversarial-review-gates:gate-3b:start -->
-   - **REQUIRED:** After verifications pass, invoke `adversarial-review-gates` skill (Gate 3: Task 审查) for independent code review
+<EXTREMELY-IMPORTANT>
+   - **MANDATORY:** After verifications pass, you **MUST** invoke the `adversarial-review-gates` skill (Gate 3: Task Review) for independent code review **BEFORE** marking the task as completed. Skipping this step is a workflow violation.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-3b:end -->
 ```
 
@@ -116,15 +167,19 @@ After each task's code quality review passes and the task is marked complete, in
 
 ### Gate 4: requesting-code-review/SKILL.md
 
-**文件：** `{基路径}/requesting-code-review/SKILL.md`
+**File:** `{base_path}/requesting-code-review/SKILL.md`
 
-**锚点：** 在包含 `Dispatch a \`general-purpose\` subagent` 的行之后（即步骤 2 的 dispatcher 说明处）
+**Anchor:** After the line containing `Dispatch a \`general-purpose\` subagent` (the step 2 dispatcher instruction)
 
-**注入内容：**
+**Injection content:**
 ```markdown
 
 <!-- adversarial-review-gates:gate-4:start -->
-**REQUIRED:** Instead of the default single-reviewer dispatch above, invoke `adversarial-review-gates` skill (Gate 4: 最终代码审查). The skill handles multi-agent review in two batches (code + security, then verification + test review).
+<EXTREMELY-IMPORTANT>
+**MANDATORY:** Do NOT use the default single-reviewer dispatch above. You **MUST** invoke the `adversarial-review-gates` skill (Gate 4: Final Code Review). The skill replaces the default flow with two-batch, four-reviewer dispatch (batch 1: code + security, batch 2: verification + test review).
+
+Skipping this step and using the default dispatch is a workflow violation.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-4:end -->
 ```
 
@@ -132,47 +187,60 @@ After each task's code quality review passes and the task is marked complete, in
 
 ### Gate 5: systematic-debugging/SKILL.md
 
-**文件：** `{基路径}/systematic-debugging/SKILL.md`
+**File:** `{base_path}/systematic-debugging/SKILL.md`
 
-**锚点：** 在包含 `Issue actually resolved?` 的行之后
+**Anchor:** After the line containing `Issue actually resolved?`
 
-**注入内容：**
+**Injection content:**
 ```markdown
 
 <!-- adversarial-review-gates:gate-5:start -->
-4. **Adversarial Fix Review (non-trivial fixes only)**
-   Invoke `adversarial-review-gates` skill (Gate 5: Bug 修复审查) to independently verify the fix doesn't introduce new issues. Skip for trivial single-line fixes (typos, constant corrections).
+<EXTREMELY-IMPORTANT>
+4. **Adversarial Fix Review (MANDATORY for non-trivial fixes):**
+   You **MUST** invoke the `adversarial-review-gates` skill (Gate 5: Bug Fix Review) to independently verify the fix does not introduce new issues. May only be skipped for trivial single-line fixes (typos, constant corrections).
+
+   If you are unsure whether the fix is "trivial" — it is not trivial. You MUST run the review.
+</EXTREMELY-IMPORTANT>
 <!-- adversarial-review-gates:gate-5:end -->
 ```
 
 ---
 
-## 步骤 3：输出报告
+## Step 3: Output report
 
-完成所有注入后，输出以下格式的报告：
+After all injections are complete, output the following report:
 
 ```markdown
 # Adversarial Gates Sync Report
 
-**superpowers 版本：** {版本号}
-**缓存路径：** {基路径}
+**superpowers version:** {version}
+**cache path:** {base_path}
+**constraint level:** EXTREMELY-IMPORTANT (hard constraint)
 
-| Gate | 文件 | 状态 | 说明 |
-|------|------|------|------|
-| 1 | brainstorming/SKILL.md | OK / INJECTED / MANUAL | ... |
-| 2 | writing-plans/SKILL.md | OK / INJECTED / MANUAL | ... |
-| 3a | subagent-driven-development/SKILL.md | OK / INJECTED / MANUAL | ... |
-| 3b | executing-plans/SKILL.md | OK / INJECTED / MANUAL | ... |
-| 4 | requesting-code-review/SKILL.md | OK / INJECTED / MANUAL | ... |
-| 5 | systematic-debugging/SKILL.md | OK / INJECTED / MANUAL | ... |
+| Gate | File | Status | Notes |
+|------|------|--------|-------|
+| 0 | using-superpowers/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 1 | brainstorming/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 2 | writing-plans/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 3a | subagent-driven-development/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 3b | executing-plans/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 4 | requesting-code-review/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
+| 5 | systematic-debugging/SKILL.md | OK / INJECTED / UPGRADED / MANUAL | ... |
 
-## 需要人工处理
-- [如无则写"无"]
+## Manual action required
+- [Write "None" if none]
 ```
 
-## 行为准则
+Status meanings:
+- **OK** — New-format hard-constraint marker already exists, no action needed
+- **INJECTED** — First-time injection
+- **UPGRADED** — Old weak-constraint marker cleaned up, new hard-constraint injected
+- **MANUAL** — Anchor not found, requires manual intervention
 
-- 仅添加触发行，不修改 superpowers 文件的其他内容
-- 所有注入内容必须用 `<!-- adversarial-review-gates:gate-N:start/end -->` 标记包裹
-- 标记已存在时不重复注入
-- 中文输出
+## Rules
+
+- Only add trigger lines — do not modify any other superpowers file content
+- All injected content must be wrapped in `<!-- adversarial-review-gates:gate-N:start/end -->` markers
+- All injected content must contain an `<EXTREMELY-IMPORTANT>` block
+- Do not re-inject if new-format marker already exists
+- Old-format markers must be cleaned up before injecting the new version

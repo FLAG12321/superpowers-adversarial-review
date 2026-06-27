@@ -17,146 +17,136 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 
 # Adversarial Review Gates
 
-## 自动同步检查
+At critical checkpoints in superpowers workflows, automatically dispatch review agents in isolated contexts for adversarial verification.
 
-本 skill 被调用时，在执行 Gate 逻辑之前先检查 sync 状态：
+**Prerequisites:** Run `/adversarial-review-gates-sync` once after first install or after superpowers upgrades to inject trigger lines into superpowers skill files.
 
-1. Glob 搜索 `~/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/brainstorming/SKILL.md`
-2. 对找到的文件 Grep 检查是否包含 `adversarial-review-gates`
-3. **未找到** → 读取 `~/.claude/skills/adversarial-review-gates/sync.md`，按其中的注入清单对 6 个 superpowers skill 文件执行注入，完成后继续下方 Gate 逻辑
-4. **已找到** → 跳过 sync，直接进入 Gate 逻辑
+**Core principle: Context isolation.** Self-review within the same session cannot provide effective verification due to anchoring bias (Cross-Context Review, Song 2026: separated context F1=28.6% vs same-session 24.6%). All review agents MUST run in isolated contexts.
 
-如果本 skill 被调用时不在任何 superpowers 工作流中（无活跃 Gate），且 sync 刚执行完成，输出 sync 报告后正常结束即可。
+**Concurrency constraint: Maximum 2 agents per parallel node.**
 
-在 superpowers 工作流的关键节点，自动 dispatch 独立上下文的审查 agent 进行对抗验证。
+## Trigger-Action Matrix
 
-**核心原则：上下文隔离。** 同一会话的自我审查因锚定效应无法提供有效验证（Cross-Context Review, Song 2026: 分离上下文 F1=28.6% vs 同会话 24.6%）。所有审查 agent 必须在独立上下文中运行。
+Execute the corresponding review action based on the current superpowers workflow stage:
 
-**并发约束：每个并行节点最多 2 个 agent。**
+### Gate 1: Spec Verification (after brainstorming completes)
 
-## 触发-动作矩阵
+**Trigger:** brainstorming skill has just completed spec self-review, about to enter User Review Gate.
 
-根据当前所处的 superpowers 工作流阶段，执行对应的审查动作：
+**Action:** Serial dispatch of `requirement-analyzer` subagent
+- Input: spec document path
+- Responsibilities: Independent verification of requirement completeness — are all features covered, are constraints explicit, are acceptance criteria verifiable, are there ambiguities
+- If gaps or ambiguities found → fix spec before submitting for user review
+- If passed → continue superpowers original flow
 
-### Gate 1: Spec 验证（brainstorming 完成后）
+### Gate 2: Adversarial Plan Review (after writing-plans completes)
 
-**触发条件：** brainstorming skill 刚完成 spec 自审，即将进入 User Review Gate。
+**Trigger:** writing-plans skill has just completed plan self-review, about to enter Execution Handoff.
 
-**动作：** 串行 dispatch `requirement-analyzer` subagent
-- 输入：spec 文档路径
-- 职责：独立验证需求完整性——功能点是否齐全、约束条件是否明确、验收标准是否可验证、是否存在歧义
-- 如果发现遗漏或歧义 → 修复 spec 后再提交用户审查
-- 如果通过 → 继续 superpowers 原流程
+**Action:** Execute in two steps
 
-### Gate 2: Plan 对抗审查（writing-plans 完成后）
-
-**触发条件：** writing-plans skill 刚完成计划自审，即将进入 Execution Handoff。
-
-**动作：** 分两步执行
-
-**步骤 1 — 并行 dispatch（x2）：**
-- `plan-reviewer` subagent（Critic 角色，model: opus）
-  - 输入：Spec + Plan
-  - 职责：逐维度审查（需求覆盖、架构合理性、实施可行性、风险盲区、向后兼容、变更范围）
-  - 返回：PASS / CONDITIONAL PASS / FAIL + 缺陷列表
+**Step 1 — Parallel dispatch (x2):**
+- `plan-reviewer` subagent (Critic role, model: opus)
+  - Input: Spec + Plan
+  - Responsibilities: Dimension-by-dimension review (requirement coverage, architecture soundness, implementation feasibility, risk blind spots, backward compatibility, change scope)
+  - Returns: PASS / CONDITIONAL PASS / FAIL + defect list
 - `design-sync` subagent
-  - 输入：Spec + Plan
-  - 职责：逐条比对需求与设计的对齐情况（正向覆盖、反向追溯、约束对齐、验收可验证）
-  - 返回：追溯矩阵 + 偏差列表
+  - Input: Spec + Plan
+  - Responsibilities: Item-by-item comparison of requirement-design alignment (forward coverage, reverse traceability, constraint alignment, acceptance verifiability)
+  - Returns: traceability matrix + deviation list
 
-**步骤 2 — 串行 dispatch（步骤 1 通过后）：**
+**Step 2 — Serial dispatch (after step 1 passes):**
 - `technical-designer` subagent
-  - 输入：Spec + Plan + 步骤 1 审查报告
-  - 职责：以独立视角审视架构决策、模块划分、接口定义是否合理
+  - Input: Spec + Plan + Step 1 review reports
+  - Responsibilities: Independent perspective on architecture decisions, module decomposition, interface definitions
 
-**处理结果：**
-- plan-reviewer 返回 FAIL 或有 HIGH 级缺陷 → 修复后重新审查
-- design-sync 发现未覆盖需求或超范围设计 → 修复后重新校验
-- technical-designer 发现架构级问题 → 修复后重新走 plan-reviewer
-- 全部通过 → 继续 superpowers 原流程进入 Execution Handoff
+**Result handling:**
+- plan-reviewer returns FAIL or has HIGH-severity defects → fix and re-review
+- design-sync finds uncovered requirements or out-of-scope design → fix and re-verify
+- technical-designer finds architecture-level issues → fix and re-run plan-reviewer
+- All pass → continue superpowers original flow into Execution Handoff
 
-### Gate 3: Task 审查（代码实现完成后）
+### Gate 3: Task Review (after code implementation completes)
 
-**触发条件：** subagent-driven-development 的 task 实现完成，或 executing-plans 完成一个 task。
+**Trigger:** subagent-driven-development task implementation completes, or executing-plans completes a task.
 
-**动作：** 覆盖 superpowers 的默认审查 agent 选择
+**Action:** Override superpowers' default review agent selection
 
-当 superpowers 流程指示 dispatch `general-purpose` subagent 进行 task review 时：
-- **改用 `code-reviewer` agent type**（独立上下文，Critic 角色，model: opus）
-- `code-reviewer` 已内置完整的审查维度（逻辑正确性、边界条件、错误处理、代码风格、性能、安全初筛）
-- 其余流程（输入格式、review package、fix 循环）与 superpowers 原流程一致
+When superpowers flow instructs dispatching a `general-purpose` subagent for task review:
+- **Use `code-reviewer` agent type instead** (isolated context, Critic role, model: opus)
+- `code-reviewer` has built-in comprehensive review dimensions (logical correctness, boundary conditions, error handling, code style, performance, security screening)
+- Remaining flow (input format, review package, fix loop) stays consistent with superpowers original flow
 
-### Gate 4: 最终代码审查（requesting-code-review 触发时）
+### Gate 4: Final Code Review (when requesting-code-review triggers)
 
-**触发条件：** requesting-code-review skill 被调用，准备 dispatch 最终审查。
+**Trigger:** requesting-code-review skill is invoked, preparing to dispatch final review.
 
-**动作：** 扩展为两批四审
+**Action:** Expand to two-batch, four-reviewer dispatch
 
-**批次 1（并行 x2）：**
-- `code-reviewer` subagent — 代码质量审查（替代 general-purpose）
-- `security-reviewer` subagent — 安全审查（OWASP Top 10、注入、凭据泄露）
+**Batch 1 (parallel x2):**
+- `code-reviewer` subagent — code quality review (replaces general-purpose)
+- `security-reviewer` subagent — security review (OWASP Top 10, injection, credential leaks)
 
-**批次 2（批次 1 完成后，并行 x2）：**
-- `code-verifier` subagent — 验证代码变更是否完整实现技术设计方案
-- `test-reviewer` subagent — 审查测试覆盖（关键路径、边界条件、错误场景、验收标准对齐）
+**Batch 2 (after batch 1 completes, parallel x2):**
+- `code-verifier` subagent — verify code changes completely implement the technical design
+- `test-reviewer` subagent — review test coverage (critical paths, boundary conditions, error scenarios, acceptance criteria alignment)
 
-**处理结果：**
-- 汇总四个 agent 的报告
-- CRITICAL 问题必须修复后重新审查
-- IMPORTANT 问题必须修复后继续
-- Minor 问题记录，不阻断
+**Result handling:**
+- Aggregate all four agents' reports
+- CRITICAL issues must be fixed and re-reviewed
+- IMPORTANT issues must be fixed before continuing
+- Minor issues are recorded, non-blocking
 
-### Gate 5: Bug 修复审查（systematic-debugging 完成后）
+### Gate 5: Bug Fix Review (after systematic-debugging completes)
 
-**触发条件：** systematic-debugging skill 的 Phase 4 完成修复并通过测试验证。
+**Trigger:** systematic-debugging skill Phase 4 completes fix and passes test verification.
 
-**动作：** 串行 dispatch `code-reviewer` subagent
-- 输入：bug 描述 + 修复的代码变更（git diff）
-- 职责：独立验证修复未引入新问题
-- 对于简单单行修复（如常量修正、typo 修复）可跳过此 gate
-- 如果发现修复引入了新的边界条件或逻辑问题 → 反馈给 systematic-debugging 流程
+**Action:** Serial dispatch of `code-reviewer` subagent
+- Input: bug description + fix code changes (git diff)
+- Responsibilities: Independently verify the fix does not introduce new issues
+- May skip this gate for trivial single-line fixes (constant corrections, typo fixes)
+- If the fix introduces new boundary conditions or logic issues → feed back to systematic-debugging flow
 
-## Agent 定义
+## Agent Definitions
 
-agent 定义文件存放在 `~/.claude/agents/` 目录下，通过 Agent 工具的 `subagent_type` 参数按名称调用。
+Agent definition files are stored in `~/.claude/agents/` directory, invoked by name via the Agent tool's `subagent_type` parameter.
 
-**调用方式：**
+**Invocation:**
 ```
 Agent({
-  description: "代码审查",
+  description: "Code review",
   subagent_type: "code-reviewer",
   model: "opus",
-  prompt: "请审查以下代码变更：\n{diff内容}"
+  prompt: "Please review the following code changes:\n{diff content}"
 })
 ```
 
-**可用 agent：**
-| subagent_type | 模型 | 用途 |
-|---------------|------|------|
+**Available agents:**
+| subagent_type | Model | Purpose |
+|---------------|-------|---------|
 | `requirement-analyzer` | sonnet | Gate 1 |
-| `plan-reviewer` | opus | Gate 2 步骤 1 |
-| `design-sync` | sonnet | Gate 2 步骤 1 |
-| `technical-designer` | sonnet | Gate 2 步骤 2 |
+| `plan-reviewer` | opus | Gate 2 Step 1 |
+| `design-sync` | sonnet | Gate 2 Step 1 |
+| `technical-designer` | sonnet | Gate 2 Step 2 |
 | `code-reviewer` | opus | Gate 3/4/5 |
 | `security-reviewer` | opus | Gate 4 |
 | `code-verifier` | sonnet | Gate 4 |
 | `test-reviewer` | sonnet | Gate 4 |
 
-## 全局规则
+## Global Rules
 
-1. **通过 sync 注入触发行** — 本 skill 通过 sync 机制向 superpowers skill 文件注入显式触发行（HTML 注释标记包裹），确保可靠调用。superpowers 更新后需重新同步（调用 `adversarial-gates-sync` skill 或等待下次本 skill 被调用时自动同步）
-2. **审查 agent 使用独立上下文** — 不传递主 agent 的推理历史，只传递 Spec/Plan/Diff 等产出物
-3. **Critic 角色偏向假阳性** — 宁可误报不可漏报
-4. **模型分离** — Critic 角色（plan-reviewer, code-reviewer, security-reviewer）用 opus 优化推理，其他用 sonnet 控制成本
-5. **审查报告格式化** — 所有审查 agent 有自己的输出格式定义，直接使用其返回结果
-6. **中文输出** — 所有审查报告使用中文
-7. **使用 subagent_type 调用** — 所有 agent 通过 Agent 工具的 `subagent_type` 参数按名称调用，model 参数显式指定
+1. **Trigger lines injected via sync** — Run `/adversarial-review-gates-sync` to inject trigger lines into superpowers skill files. Re-run after superpowers updates.
+2. **Review agents use isolated contexts** — Do not pass the main agent's reasoning history, only pass artifacts (Spec/Plan/Diff etc.)
+3. **Critic roles bias toward false positives** — Better to over-report than to miss issues
+4. **Model separation** — Critic roles (plan-reviewer, code-reviewer, security-reviewer) use opus for optimized reasoning, others use sonnet for cost control
+5. **Review report formatting** — All review agents have their own output format definitions, use their returned results directly
+6. **Use subagent_type for invocation** — All agents are invoked via the Agent tool's `subagent_type` parameter by name, with model parameter explicitly specified
 
-## 如何判断当前处于哪个 Gate
+## How to Determine the Current Gate
 
-- 如果刚完成 spec 文档写入和自审 → Gate 1
-- 如果刚完成 plan 文档写入和自审 → Gate 2
-- 如果刚完成一个 task 的实现 → Gate 3
-- 如果 requesting-code-review skill 被调用 → Gate 4
-- 如果 systematic-debugging 完成了 Phase 4 修复 → Gate 5
-- 如果不确定 → 根据最近的 superpowers skill 调用记录判断
+- If spec document was just written and self-reviewed → Gate 1
+- If plan document was just written and self-reviewed → Gate 2
+- If a task implementation was just completed → Gate 3
+- If requesting-code-review skill was invoked → Gate 4
+- If systematic-debugging completed Phase 4 fix → Gate 5
+- If uncertain → determine based on the most recent superpowers skill invocation record
