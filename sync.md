@@ -118,7 +118,7 @@ After each task's code quality review passes and the task is marked complete, in
 
 **文件：** `{基路径}/requesting-code-review/SKILL.md`
 
-**锚点：** 在包含 `Use Task tool with` 的行之后（即步骤 2 的 dispatcher 说明处）
+**锚点：** 在包含 `Dispatch a \`general-purpose\` subagent` 的行之后（即步骤 2 的 dispatcher 说明处）
 
 **注入内容：**
 ```markdown

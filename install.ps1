@@ -27,7 +27,7 @@ Write-Host ''
 # 检查 superpowers 插件是否已安装（plugin cache）
 $SuperpowersCachePath = Join-Path $ClaudeDir 'plugins\cache\claude-plugins-official\superpowers'
 if (Test-Path $SuperpowersCachePath) {
-    $Versions = Get-ChildItem -Path $SuperpowersCachePath -Directory | Sort-Object Name -Descending
+    $Versions = @(Get-ChildItem -Path $SuperpowersCachePath -Directory | Sort-Object Name -Descending)
     if ($Versions.Count -gt 0) {
         Write-Host "[OK] 已检测到 superpowers 插件 (版本: $($Versions[0].Name))" -ForegroundColor Green
     } else {
