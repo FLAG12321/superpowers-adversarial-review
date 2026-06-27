@@ -4,6 +4,8 @@ Extends 6 core superpowers skills with multi-subagent adversarial verification: 
 
 ## Prerequisites
 
+> [中文文档](README.zh-CN.md) / [English](README.md)
+
 - **Claude Code** installed and working
 - **superpowers plugin** installed
   - Install: https://github.com/superpowers-ai/superpowers
