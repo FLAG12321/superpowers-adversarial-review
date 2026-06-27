@@ -116,38 +116,31 @@ If you were dispatched as a subagent to execute a specific task, skip this skill
 - 对于简单单行修复（如常量修正、typo 修复）可跳过此 gate
 - 如果发现修复引入了新的边界条件或逻辑问题 → 反馈给 systematic-debugging 流程
 
-## Agent 按需加载
+## Agent 定义
 
-agent 定义文件存放在本 skill 目录下的 `agents/` 子目录中（**不在** `.claude/agents/`），避免每个对话启动时全量加载到系统提示。
+agent 定义文件存放在 `~/.claude/agents/` 目录下，通过 Agent 工具的 `subagent_type` 参数按名称调用。
 
-**调用方式：** 每个 Gate 需要 dispatch subagent 时，执行以下步骤：
-1. 用 Read 工具读取 `~/.claude/skills/adversarial-review-gates/agents/<agent-name>.md` 文件
-2. 从文件 frontmatter 中提取 `model`、`tools` 等配置
-3. 将文件正文（frontmatter 之后的全部内容）作为 Agent 工具的 `prompt` 参数，前面拼接本次审查的具体输入（Spec/Plan/Diff 等）
-4. 将 frontmatter 中的 `model` 作为 Agent 工具的 `model` 参数
-
-**示例：**
+**调用方式：**
 ```
-# 1. 读取 agent 定义
-Read("~/.claude/skills/adversarial-review-gates/agents/code-reviewer.md")
-
-# 2. 调用 Agent（prompt = 审查输入 + 文件正文）
 Agent({
   description: "代码审查",
-  model: "opus",           // 从 frontmatter 提取
-  prompt: "请审查以下代码变更：\n{diff内容}\n\n---\n\n{文件正文内容}"
+  subagent_type: "code-reviewer",
+  model: "opus",
+  prompt: "请审查以下代码变更：\n{diff内容}"
 })
 ```
 
-**可用 agent 文件：**
-- `requirement-analyzer.md` — Gate 1 使用
-- `plan-reviewer.md` — Gate 2 步骤 1 使用
-- `design-sync.md` — Gate 2 步骤 1 使用
-- `technical-designer.md` — Gate 2 步骤 2 使用
-- `code-reviewer.md` — Gate 3/4/5 使用
-- `security-reviewer.md` — Gate 4 使用
-- `code-verifier.md` — Gate 4 使用
-- `test-reviewer.md` — Gate 4 使用
+**可用 agent：**
+| subagent_type | 模型 | 用途 |
+|---------------|------|------|
+| `requirement-analyzer` | sonnet | Gate 1 |
+| `plan-reviewer` | opus | Gate 2 步骤 1 |
+| `design-sync` | sonnet | Gate 2 步骤 1 |
+| `technical-designer` | sonnet | Gate 2 步骤 2 |
+| `code-reviewer` | opus | Gate 3/4/5 |
+| `security-reviewer` | opus | Gate 4 |
+| `code-verifier` | sonnet | Gate 4 |
+| `test-reviewer` | sonnet | Gate 4 |
 
 ## 全局规则
 
@@ -157,7 +150,7 @@ Agent({
 4. **模型分离** — Critic 角色（plan-reviewer, code-reviewer, security-reviewer）用 opus 优化推理，其他用 sonnet 控制成本
 5. **审查报告格式化** — 所有审查 agent 有自己的输出格式定义，直接使用其返回结果
 6. **中文输出** — 所有审查报告使用中文
-7. **不使用 subagent_type** — 所有 agent 通过 Read + prompt 方式按需加载，不依赖 `.claude/agents/` 预注册
+7. **使用 subagent_type 调用** — 所有 agent 通过 Agent 工具的 `subagent_type` 参数按名称调用，model 参数显式指定
 
 ## 如何判断当前处于哪个 Gate
 

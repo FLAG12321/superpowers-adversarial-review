@@ -89,7 +89,12 @@ superpowers 原始流程              对抗验证扩展
 ## 卸载
 
 ```powershell
+# 1. 删除 skill 目录
 Remove-Item -Path "$env:USERPROFILE\.claude\skills\adversarial-review-gates" -Recurse -Force
+
+# 2. 删除 agent 定义
+$agents = @('requirement-analyzer','technical-designer','plan-reviewer','design-sync','code-reviewer','code-verifier','security-reviewer','test-reviewer')
+foreach ($a in $agents) { Remove-Item "$env:USERPROFILE\.claude\agents\$a.md" -ErrorAction SilentlyContinue }
 ```
 
 superpowers skill 文件中的注入标记会在下次 superpowers 更新时自动清除。如需立即清除，重新安装 superpowers 插件即可。

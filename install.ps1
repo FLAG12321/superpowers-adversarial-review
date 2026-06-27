@@ -1,6 +1,6 @@
 # install.ps1 — superpowers-adversarial-review 安装脚本
 # 兼容 PowerShell 5.1+
-# 功能：将 adversarial-review-gates skill（含 agents）安装到 ~/.claude/skills/
+# 功能：将 adversarial-review-gates skill 安装到 ~/.claude/skills/，agent 定义安装到 ~/.claude/agents/
 
 [CmdletBinding()]
 param()
@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 # ── 路径定义 ──────────────────────────────────────────────────────
 $ClaudeDir    = Join-Path $env:USERPROFILE '.claude'
 $SkillsDir    = Join-Path $ClaudeDir 'skills'
+$AgentsDir    = Join-Path $ClaudeDir 'agents'
 $TargetDir    = Join-Path $SkillsDir 'adversarial-review-gates'
 $ScriptRoot   = $PSScriptRoot
 
@@ -50,7 +51,7 @@ if (Test-Path $TargetDir) {
 Write-Host ''
 Write-Host '正在安装 adversarial-review-gates skill...' -ForegroundColor Yellow
 
-# 创建目标目录
+# 创建 skill 目录
 if (-not (Test-Path $TargetDir)) {
     New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
 }
@@ -61,55 +62,37 @@ Write-Host '  + SKILL.md' -ForegroundColor DarkGray
 Copy-Item -Path $SrcSyncMd -Destination (Join-Path $TargetDir 'sync.md') -Force
 Write-Host '  + sync.md' -ForegroundColor DarkGray
 
-# 复制 agents/ 目录
-$AgentsTargetDir = Join-Path $TargetDir 'agents'
-if (-not (Test-Path $AgentsTargetDir)) {
-    New-Item -ItemType Directory -Path $AgentsTargetDir -Force | Out-Null
+Write-Host '[OK] 已安装 skill 文件' -ForegroundColor Green
+
+# ── 安装 agents ───────────────────────────────────────────────────
+Write-Host ''
+Write-Host '正在安装 agent 定义到 ~/.claude/agents/...' -ForegroundColor Yellow
+
+if (-not (Test-Path $AgentsDir)) {
+    New-Item -ItemType Directory -Path $AgentsDir -Force | Out-Null
 }
 
 $AgentFiles = Get-ChildItem -Path $SrcAgents -File -Filter '*.md'
 $AgentCount = 0
 
 foreach ($agent in $AgentFiles) {
-    Copy-Item -Path $agent.FullName -Destination (Join-Path $AgentsTargetDir $agent.Name) -Force
+    Copy-Item -Path $agent.FullName -Destination (Join-Path $AgentsDir $agent.Name) -Force
     $AgentCount++
-    Write-Host "  + agents/$($agent.Name)" -ForegroundColor DarkGray
+    Write-Host "  + $($agent.Name)" -ForegroundColor DarkGray
 }
 
-Write-Host "[OK] 已安装 skill + $AgentCount 个 agent 定义" -ForegroundColor Green
-
-# ── 清理旧版安装的 agent 文件（从 ~/.claude/agents/ 迁移） ────────
-$OldAgentsDir = Join-Path $ClaudeDir 'agents'
-$OldAgentNames = @(
-    'requirement-analyzer.md',
-    'technical-designer.md',
-    'plan-reviewer.md',
-    'design-sync.md',
-    'code-reviewer.md',
-    'code-verifier.md',
-    'security-reviewer.md',
-    'test-reviewer.md'
-)
-$CleanedCount = 0
-foreach ($name in $OldAgentNames) {
-    $oldPath = Join-Path $OldAgentsDir $name
-    if (Test-Path $oldPath) {
-        Remove-Item $oldPath -Force -Confirm:$false
-        $CleanedCount++
-    }
-}
-if ($CleanedCount -gt 0) {
-    Write-Host "[OK] 已清理旧版 $CleanedCount 个 agent 文件 (从 ~/.claude/agents/)" -ForegroundColor Green
-}
+Write-Host "[OK] 已安装 $AgentCount 个 agent 定义" -ForegroundColor Green
 
 # ── 安装结果摘要 ──────────────────────────────────────────────────
 Write-Host ''
 Write-Host '=== 安装完成 ===' -ForegroundColor Cyan
 Write-Host ''
-Write-Host "  安装位置: $TargetDir" -ForegroundColor White
-Write-Host "  文件: SKILL.md, sync.md, agents/ ($AgentCount 个)" -ForegroundColor White
+Write-Host "  Skill:   $TargetDir" -ForegroundColor White
+Write-Host "           SKILL.md, sync.md" -ForegroundColor White
+Write-Host "  Agents:  $AgentsDir" -ForegroundColor White
+Write-Host "           $AgentCount 个 agent 定义" -ForegroundColor White
 Write-Host ''
 Write-Host '下一步: 在 Claude Code 中调用 /adversarial-review-gates 触发首次 sync，' -ForegroundColor Yellow
 Write-Host '        自动向 superpowers skill 文件注入显式触发行。' -ForegroundColor Yellow
 Write-Host ''
-Write-Host '卸载方法: 删除 ~/.claude/skills/adversarial-review-gates/ 目录即可。' -ForegroundColor DarkGray
+Write-Host '卸载: 删除 ~/.claude/skills/adversarial-review-gates/ 和 ~/.claude/agents/ 下的 8 个 agent 文件。' -ForegroundColor DarkGray
